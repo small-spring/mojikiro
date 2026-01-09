@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文字数進捗レコーダー v9</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --secondary-color: #64748b;
+            --accent-color: #f59e0b;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #334155;
+            --border-color: #e2e8f0;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-bottom: 80px;
+        }
+
+        /* --- ヘッダー --- */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(5px);
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            z-index: 100;
+            border-bottom: 1px solid var(--border-color);
+        }
+        input[type="number"] {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            width: 140px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        button:active { transform: translateY(1px); }
+        .btn-primary { background-color: var(--primary-color); }
+        .btn-primary:hover { background-color: #2563eb; }
+        
+        .btn-secondary { background-color: var(--secondary-color); font-size: 14px; padding: 8px 16px; }
+        .btn-secondary:hover { background-color: #475569; }
+
+        .btn-danger { background-color: #ef4444; font-size: 14px; padding: 8px 16px;}
+        .btn-danger:hover { background-color: #dc2626; }
+
+        .btn-accent { background-color: var(--accent-color); font-size: 14px; padding: 8px 16px;}
+        .btn-accent:hover { background-color: #d97706; }
+        /* 成功時の緑色ボタン用 */
+        .btn-success { background-color: #10b981 !important; pointer-events: none; }
+
+        /* --- コンテナ --- */
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+
+        /* --- 統計 --- */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .stat-item span { display: block; font-size: 0.85em; color: #64748b; margin-bottom: 5px;}
+        .stat-item strong { display: block; font-size: 24px; color: var(--text-color); }
+        .text-blue { color: var(--primary-color) !important; }
+
+        /* --- グラフ --- */
+        .chart-container {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            height: 400px;
+        }
+
+        /* --- 編集・入力フォームエリア --- */
+        .past-entry-section { margin-bottom: 20px; }
+        .past-form-card {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            text-align: left;
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .form-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        input[type="datetime-local"] {
+            padding: 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-title {
+            margin: 0 0 10px 0; font-size: 0.9em; color: #d97706; font-weight: bold;
+            display: flex; justify-content: space-between;
+        }
+
+        /* --- 履歴テーブルとアイコンボタン --- */
+        .history-section h3 {
+            border-left: 5px solid var(--primary-color);
+            padding-left: 10px;
+            margin-bottom: 15px;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card-bg);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            font-size: 0.95em;
+        }
+        .history-table th, .history-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .history-table th { background-color: #f1f5f9; font-weight: 600; color: #475569; }
+        
+        .action-cell { white-space: nowrap; width: 80px; text-align: right; }
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 6px;
+            color: #94a3b8;
+            border-radius: 4px;
+            transition: color 0.2s, background 0.2s;
+        }
+        .icon-btn:hover { background-color: #f1f5f9; }
+        .icon-btn.edit:hover { color: #3b82f6; }
+        .icon-btn.delete:hover { color: #ef4444; }
+
+        .footer-controls {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sticky-header">
+        <input type="number" id="currentWordCount" placeholder="いま何文字？" onkeypress="handleEnter(event)">
+        <button class="btn-primary" onclick="addCurrentData()">記録する</button>
+    </div>
+
+    <div class="container">
+        <div class="stats">
+            <div class="stat-item">
+                <span>現在の文字数</span>
+                <strong id="statTotal" class="text-blue">0</strong>
+            </div>
+            <div class="stat-item">
+                <span>記録回数</span>
+                <strong id="statCount">0</strong>
+            </div>
+            <div class="stat-item">
+                <span>前回との差分</span>
+                <strong id="statDiff">-</strong>
+            </div>
+            <div class="stat-item">
+                <span>開始日</span>
+                <strong id="statStart">-</strong>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="progressChart"></canvas>
+        </div>
+
+        <div class="history-section">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>記録履歴</h3>
+                <button id="toggleFormBtn" class="btn-accent" onclick="togglePastForm()">
+                    <i class="fa-solid fa-plus"></i> 過去の記録を追加
+                </button>
+            </div>
+
+            <div id="pastForm" class="past-form-card">
+                <div class="form-title">
+                    <span id="formTitleText">過去の記録を追加</span>
+                    <span id="editingIndicator" style="display:none; color: #ef4444; font-size: 0.9em;">( 編集中 )</span>
+                </div>
+                <div class="form-row">
+                    <input type="datetime-local" id="pastDateInput">
+                    <input type="number" id="pastWordCount" placeholder="文字数">
+                    <button class="btn-accent" id="formSubmitBtn" onclick="submitPastForm()">追加</button>
+                </div>
+            </div>
+
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>日時</th>
+                        <th>文字数</th>
+                        <th>増減</th>
+                        <th style="text-align: right;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    </tbody>
+            </table>
+        </div>
+
+        <div class="footer-controls">
+            <button class="btn-secondary" onclick="exportCSV()">CSV保存</button>
+            <button class="btn-danger" onclick="resetAll()">全データ削除</button>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'word_count_progress_v5';
+        let records = [];
+        let chartInstance = null;
+        let editingId = null; 
+
+        window.onload = function() {
+            loadData();
+            initChart();
+            renderAll();
+        };
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') addCurrentData();
+        }
+
+        // --- データ管理 ---
+        function loadData() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                records = JSON.parse(stored);
+                sortRecords();
+            }
+        }
+
+        function saveData() {
+            sortRecords();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+            renderAll();
+        }
+
+        function sortRecords() {
+            records.sort((a, b) => a.timestamp - b.timestamp);
+        }
+
+        // --- アクション: 現在を記録 ---
+        function addCurrentData() {
+            const input = document.getElementById('currentWordCount');
+            const count = parseInt(input.value);
+
+            if (isNaN(count)) return alert('文字数を入力してください');
+
+            const now = new Date();
+            records.push({
+                timestamp: now.getTime(),
+                count: count
+            });
+
+            input.value = '';
+            saveData();
+        }
+
+        // --- トグルとフォーム制御 ---
+        function togglePastForm() {
+            const form = document.getElementById('pastForm');
+            const isHidden = (form.style.display === 'none' || form.style.display === '');
+            
+            if (isHidden) {
+                openForm(false);
+            } else {
+                closeForm();
+            }
+        }
+
+        function openForm(isEditMode) {
+            const form = document.getElementById('pastForm');
+            const btn = document.getElementById('toggleFormBtn');
+            
+            form.style.display = 'block';
+            btn.innerHTML = '<i class="fa-solid fa-minus"></i> 入力を閉じる';
+            btn.className = 'btn-secondary';
+
+            if (!isEditMode) {
+                // 新規モード：日時がまだ入っていなければ現在時刻を入れる（すでに入っていれば維持される）
+                // ただしフォームを閉じた後に入力が残っていると混乱するので、
+                // トグルで「開いた」ときはリセットするのが自然。
+                // *連続入力中* はここを通らないので大丈夫。
+                resetFormInputs();
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                document.getElementById('pastDateInput').value = now.toISOString().slice(0, 16);
+            }
+        }
+
+        function closeForm() {
+            const form = document.getElementById('pastForm');
+            const btn = document.getElementById('toggleFormBtn');
+
+            form.style.display = 'none';
+            resetFormInputs();
+
+            btn.innerHTML = '<i class="fa-solid fa-plus"></i> 過去の記録を追加';
+            btn.className = 'btn-accent';
+        }
+
+        function resetFormInputs() {
+            editingId = null;
+            document.getElementById('pastWordCount').value = '';
+            document.getElementById('formTitleText').innerText = '過去の記録を追加';
+            document.getElementById('formSubmitBtn').innerText = '追加';
+            document.getElementById('editingIndicator').style.display = 'none';
+        }
+
+        function startEdit(timestamp) {
+            const record = records.find(r => r.timestamp === timestamp);
+            if (!record) return;
+
+            editingId = timestamp;
+            
+            // 編集モードとして開く（強制的に値をセットする）
+            const form = document.getElementById('pastForm');
+            const btn = document.getElementById('toggleFormBtn');
+            form.style.display = 'block';
+            btn.innerHTML = '<i class="fa-solid fa-minus"></i> 入力を閉じる';
+            btn.className = 'btn-secondary';
+
+            const d = new Date(record.timestamp);
+            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+            document.getElementById('pastDateInput').value = d.toISOString().slice(0, 16);
+            document.getElementById('pastWordCount').value = record.count;
+
+            document.getElementById('formTitleText').innerText = '記録を修正';
+            document.getElementById('formSubmitBtn').innerText = '更新';
+            document.getElementById('editingIndicator').style.display = 'inline';
+            
+            form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function submitPastForm() {
+            const dateInput = document.getElementById('pastDateInput');
+            const countInput = document.getElementById('pastWordCount');
+            const submitBtn = document.getElementById('formSubmitBtn');
+            const dateVal = dateInput.value;
+            const count = parseInt(countInput.value);
+
+            if (!dateVal || isNaN(count)) return alert('日時と文字数を正しく入力してください');
+
+            const newTimestamp = new Date(dateVal).getTime();
+
+            // 編集モードなら古いデータを削除
+            if (editingId !== null) {
+                records = records.filter(r => r.timestamp !== editingId);
+            }
+
+            // 新しいデータを追加
+            records.push({
+                timestamp: newTimestamp,
+                count: count
+            });
+
+            saveData();
+
+            // --- ここを変更: フォームを閉じずに連続入力をサポート ---
+            
+            // 1. 文字数だけクリアし、フォーカスを戻す（次を打ちやすくする）
+            countInput.value = '';
+            countInput.focus();
+
+            // 2. 編集モードだった場合は、通常の「追加」モードに戻しておく
+            //    （そうしないと、連続入力したつもりが同じIDを上書きし続けるバグになる）
+            if (editingId !== null) {
+                editingId = null;
+                document.getElementById('formTitleText').innerText = '過去の記録を追加';
+                submitBtn.innerText = '追加';
+                document.getElementById('editingIndicator').style.display = 'none';
+            }
+
+            // 3. 成功した感触を出す（ボタンを一瞬緑にしてテキスト変更）
+            const originalText = submitBtn.innerText;
+            submitBtn.innerText = '追加しました！';
+            submitBtn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                submitBtn.innerText = '追加';
+                submitBtn.classList.remove('btn-success');
+            }, 1000);
+        }
+
+        // --- アクション: 削除 ---
+        function deleteRecord(timestamp) {
+            if(!confirm('この記録を削除しますか？')) return;
+            records = records.filter(r => r.timestamp !== timestamp);
+            if (editingId === timestamp) closeForm();
+            saveData();
+        }
+
+        function resetAll() {
+            if(confirm('本当に全てのデータを削除しますか？')) {
+                records = [];
+                closeForm();
+                saveData();
+            }
+        }
+
+        // --- 描画関連 ---
+        function renderAll() {
+            updateStats();
+            renderTable();
+            updateChart();
+        }
+
+        function updateStats() {
+            if (records.length === 0) {
+                document.getElementById('statTotal').innerText = '0';
+                document.getElementById('statCount').innerText = '0';
+                document.getElementById('statDiff').innerText = '-';
+                document.getElementById('statStart').innerText = '-';
+                return;
+            }
+
+            const last = records[records.length - 1];
+            document.getElementById('statTotal').innerText = last.count.toLocaleString();
+            document.getElementById('statCount').innerText = records.length;
+
+            const firstDate = new Date(records[0].timestamp);
+            document.getElementById('statStart').innerText = `${firstDate.getMonth()+1}/${firstDate.getDate()}`;
+
+            if (records.length >= 2) {
+                const prev = records[records.length - 2];
+                const diff = last.count - prev.count;
+                const el = document.getElementById('statDiff');
+                el.innerText = (diff > 0 ? '+' : '') + diff.toLocaleString();
+                el.style.color = diff >= 0 ? '#10b981' : '#ef4444';
+            } else {
+                document.getElementById('statDiff').innerText = '-';
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('historyBody');
+            tbody.innerHTML = '';
+            
+            const viewRecords = [...records].reverse();
+
+            viewRecords.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                const d = new Date(r.timestamp);
+                const dateStr = d.toLocaleString('ja-JP', { 
+                    year: 'numeric', month: '2-digit', day: '2-digit', 
+                    hour: '2-digit', minute: '2-digit' 
+                });
+
+                let diffStr = '-';
+                let color = '#333';
+                
+                if (idx < viewRecords.length - 1) {
+                    const prevCount = viewRecords[idx + 1].count;
+                    const diff = r.count - prevCount;
+                    diffStr = (diff > 0 ? '+' : '') + diff;
+                    color = diff >= 0 ? '#10b981' : '#ef4444';
+                }
+
+                tr.innerHTML = `
+                    <td>${dateStr}</td>
+                    <td>${r.count.toLocaleString()}</td>
+                    <td style="color:${color}; font-weight:bold;">${diffStr}</td>
+                    <td class="action-cell">
+                        <button class="icon-btn edit" onclick="startEdit(${r.timestamp})" title="編集">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="icon-btn delete" onclick="deleteRecord(${r.timestamp})" title="削除">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: '文字数',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 3,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day',
+                                tooltipFormat: 'yyyy/MM/dd HH:mm',
+                                displayFormats: { day: 'MM/dd', hour: 'HH:mm' }
+                            },
+                            title: { display: true, text: '日付' }
+                        },
+                        y: { beginAtZero: true }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) { return ctx.parsed.y + ' 文字'; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!chartInstance) return;
+            const data = records.map(r => ({ x: r.timestamp, y: r.count }));
+            chartInstance.data.datasets[0].data = data;
+            chartInstance.update();
+        }
+
+        // --- CSVエクスポート ---
+        function exportCSV() {
+            if (records.length === 0) return alert('データがありません');
+            
+            let csvContent = "Date,Count\n";
+            
+            records.forEach(r => {
+                const d = new Date(r.timestamp);
+                const year = d.getFullYear();
+                const month = (d.getMonth() + 1).toString().padStart(2, '0');
+                const day = d.getDate().toString().padStart(2, '0');
+                const hours = d.getHours().toString().padStart(2, '0');
+                const minutes = d.getMinutes().toString().padStart(2, '0');
+                const dateStr = `${year}/${month}/${day} ${hours}:${minutes}`;
+                
+                csvContent += `${dateStr},${r.count}\n`;
+            });
+
+            const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "word_count_history.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
