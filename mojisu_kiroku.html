@@ -2,9 +2,13 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文字数進捗レコーダー v9</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>文字数進捗レコーダー v10</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="apple-touch-icon" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/sprites/solid.svg"> <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -25,6 +29,8 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             padding-bottom: 80px;
+            /* スマホでのバウンススクロール防止 */
+            overscroll-behavior-y: none;
         }
 
         /* --- ヘッダー --- */
@@ -185,7 +191,11 @@
             display: flex;
             justify-content: flex-end;
             gap: 10px;
+            flex-wrap: wrap;
         }
+        
+        /* ファイル入力は非表示にする */
+        #csvFileInput { display: none; }
     </style>
 </head>
 <body>
@@ -249,13 +259,22 @@
                     </tr>
                 </thead>
                 <tbody id="historyBody">
-                    </tbody>
+                </tbody>
             </table>
         </div>
 
         <div class="footer-controls">
-            <button class="btn-secondary" onclick="exportCSV()">CSV保存</button>
-            <button class="btn-danger" onclick="resetAll()">全データ削除</button>
+            <input type="file" id="csvFileInput" accept=".csv" onchange="importCSV(this)">
+            
+            <button class="btn-secondary" onclick="document.getElementById('csvFileInput').click()">
+                <i class="fa-solid fa-file-import"></i> CSV読込
+            </button>
+            <button class="btn-secondary" onclick="exportCSV()">
+                <i class="fa-solid fa-file-export"></i> CSV保存
+            </button>
+            <button class="btn-danger" onclick="resetAll()">
+                <i class="fa-solid fa-trash"></i> 全削除
+            </button>
         </div>
     </div>
 
@@ -332,10 +351,6 @@
             btn.className = 'btn-secondary';
 
             if (!isEditMode) {
-                // 新規モード：日時がまだ入っていなければ現在時刻を入れる（すでに入っていれば維持される）
-                // ただしフォームを閉じた後に入力が残っていると混乱するので、
-                // トグルで「開いた」ときはリセットするのが自然。
-                // *連続入力中* はここを通らないので大丈夫。
                 resetFormInputs();
                 const now = new Date();
                 now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -367,8 +382,6 @@
             if (!record) return;
 
             editingId = timestamp;
-            
-            // 編集モードとして開く（強制的に値をセットする）
             const form = document.getElementById('pastForm');
             const btn = document.getElementById('toggleFormBtn');
             form.style.display = 'block';
@@ -398,12 +411,10 @@
 
             const newTimestamp = new Date(dateVal).getTime();
 
-            // 編集モードなら古いデータを削除
             if (editingId !== null) {
                 records = records.filter(r => r.timestamp !== editingId);
             }
 
-            // 新しいデータを追加
             records.push({
                 timestamp: newTimestamp,
                 count: count
@@ -411,14 +422,10 @@
 
             saveData();
 
-            // --- ここを変更: フォームを閉じずに連続入力をサポート ---
-            
-            // 1. 文字数だけクリアし、フォーカスを戻す（次を打ちやすくする）
+            // 連続入力サポート
             countInput.value = '';
             countInput.focus();
 
-            // 2. 編集モードだった場合は、通常の「追加」モードに戻しておく
-            //    （そうしないと、連続入力したつもりが同じIDを上書きし続けるバグになる）
             if (editingId !== null) {
                 editingId = null;
                 document.getElementById('formTitleText').innerText = '過去の記録を追加';
@@ -426,7 +433,6 @@
                 document.getElementById('editingIndicator').style.display = 'none';
             }
 
-            // 3. 成功した感触を出す（ボタンを一瞬緑にしてテキスト変更）
             const originalText = submitBtn.innerText;
             submitBtn.innerText = '追加しました！';
             submitBtn.classList.add('btn-success');
@@ -597,6 +603,7 @@
                 csvContent += `${dateStr},${r.count}\n`;
             });
 
+            // BOM付きでExcel文字化け防止
             const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
             const url = URL.createObjectURL(blob);
             
@@ -606,6 +613,61 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        // --- CSVインポート ---
+        function importCSV(inputElement) {
+            const file = inputElement.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split(/\r\n|\n/); // 改行コードで分割
+                
+                let importCount = 0;
+
+                // 1行目はヘッダーなのでスキップする前提 (Date,Count で始まるか簡易チェック)
+                const startIndex = lines[0].includes('Date') || lines[0].includes('Count') ? 1 : 0;
+
+                for (let i = startIndex; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue; // 空行は無視
+
+                    const parts = line.split(',');
+                    if (parts.length < 2) continue;
+
+                    // 文字列の日時をパース
+                    const dateStr = parts[0].trim();
+                    const countStr = parts[1].trim();
+                    
+                    const timestamp = new Date(dateStr).getTime();
+                    const count = parseInt(countStr);
+
+                    if (!isNaN(timestamp) && !isNaN(count)) {
+                        // 重複チェック（同じタイムスタンプがあれば上書きせずスキップ、あるいは上書きなどの仕様はお好みで）
+                        // ここでは「既存データになければ追加」とします
+                        const exists = records.some(r => r.timestamp === timestamp);
+                        if (!exists) {
+                            records.push({ timestamp: timestamp, count: count });
+                            importCount++;
+                        }
+                    }
+                }
+
+                if (importCount > 0) {
+                    saveData(); // ソートして保存して再描画
+                    alert(`${importCount} 件のデータを読み込みました！`);
+                } else {
+                    alert('新しいデータは見つかりませんでした（重複またはフォーマット不正）');
+                }
+
+                // inputをリセット（同じファイルを再度選べるように）
+                inputElement.value = '';
+            };
+
+            reader.readAsText(file);
         }
     </script>
 </body>
